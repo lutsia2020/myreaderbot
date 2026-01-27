@@ -291,7 +291,7 @@ def main():
 
     print("✅ Бот запущен")
     WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
-    WEBHOOK_URL = f"https://ТВОЙ-RENDER-URL{WEBHOOK_PATH}"
+    WEBHOOK_URL = f"https://https://myreaderbot.onrender.com{WEBHOOK_PATH}"
 
     fastapi_app = FastAPI()
     telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
