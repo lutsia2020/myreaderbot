@@ -1,5 +1,4 @@
 from fastapi import FastAPI, Request
-import uvicorn
 import os
 import logging
 from telegram import (
@@ -278,42 +277,31 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_page(update, context, user_id)
 
 
-# ================== ЗАПУСК ==================
+# ================== WEBHOOK ==================
 
-def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
+WEBHOOK_URL = f"https://myreaderbot.onrender.com{WEBHOOK_PATH}"
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(
-        MessageHandler(filters.Document.FileExtension("epub"), handle_epub)
-    )
-    app.add_handler(CallbackQueryHandler(callbacks))
+fastapi_app = FastAPI()
+telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    print("✅ Бот запущен")
-    WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
-    WEBHOOK_URL = f"https://https://myreaderbot.onrender.com{WEBHOOK_PATH}"
-
-    fastapi_app = FastAPI()
-    telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    @fastapi_app.on_event("startup")
-    async def on_startup():
-       await telegram_app.bot.set_webhook(WEBHOOK_URL)
-
-    @fastapi_app.post(WEBHOOK_PATH)
-    async def telegram_webhook(request: Request):
-       data = await request.json()
-       update = Update.de_json(data, telegram_app.bot)
-       await telegram_app.process_update(update)
-       return {"ok": True}
-
-    def main():
-      telegram_app.add_handler(CommandHandler("start", start))
-      telegram_app.add_handler(
-        MessageHandler(filters.Document.FileExtension("epub"), handle_epub)
-      )
-      telegram_app.add_handler(CallbackQueryHandler(callbacks))
+# регистрируем хендлеры ОДИН РАЗ
+telegram_app.add_handler(CommandHandler("start", start))
+telegram_app.add_handler(
+    MessageHandler(filters.Document.FileExtension("epub"), handle_epub)
+)
+telegram_app.add_handler(CallbackQueryHandler(callbacks))
 
 
-if __name__ == "__main__":
-    main()
+@fastapi_app.on_event("startup")
+async def on_startup():
+    await telegram_app.bot.set_webhook(WEBHOOK_URL)
+    print("✅ Бот запущен (webhook)")
+
+
+@fastapi_app.post(WEBHOOK_PATH)
+async def telegram_webhook(request: Request):
+    data = await request.json()
+    update = Update.de_json(data, telegram_app.bot)
+    await telegram_app.process_update(update)
+    return {"ok": True}
