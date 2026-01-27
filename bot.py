@@ -1,3 +1,5 @@
+from fastapi import FastAPI, Request
+import uvicorn
 import os
 import logging
 from telegram import (
@@ -288,7 +290,30 @@ def main():
     app.add_handler(CallbackQueryHandler(callbacks))
 
     print("✅ Бот запущен")
-    app.run_polling()
+    WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
+    WEBHOOK_URL = f"https://ТВОЙ-RENDER-URL{WEBHOOK_PATH}"
+
+    fastapi_app = FastAPI()
+    telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    @fastapi_app.on_event("startup")
+    async def on_startup():
+       await telegram_app.bot.set_webhook(WEBHOOK_URL)
+
+    @fastapi_app.post(WEBHOOK_PATH)
+    async def telegram_webhook(request: Request):
+       data = await request.json()
+       update = Update.de_json(data, telegram_app.bot)
+       await telegram_app.process_update(update)
+       return {"ok": True}
+
+    def main():
+      telegram_app.add_handler(CommandHandler("start", start))
+      telegram_app.add_handler(
+        MessageHandler(filters.Document.FileExtension("epub"), handle_epub)
+      )
+      telegram_app.add_handler(CallbackQueryHandler(callbacks))
+
 
 if __name__ == "__main__":
     main()
