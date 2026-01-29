@@ -1,5 +1,4 @@
-from fastapi import FastAPI, Request
-import os
+
 import logging
 from telegram import (
     Update,
@@ -21,11 +20,19 @@ from pymongo import MongoClient
 
 # ================== НАСТРОЙКИ ==================
 
+import os
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
+
+if not BOT_TOKEN:
+    raise RuntimeError("❌ BOT_TOKEN не задан")
+
+if not MONGO_URI:
+    raise RuntimeError("❌ MONGO_URI не задан")
+
 MAX_CHARS_PER_PAGE = 900
 
-PARAGRAPHS_PER_PAGE = 3
 
 # ================== ЛОГИ (БЕЗОПАСНО) ==================
 
@@ -50,6 +57,11 @@ book_cache = {}
 # }
 
 # ================== ВСПОМОГАТЕЛЬНОЕ ==================
+
+def escape_md(text: str) -> str:
+    for ch in r"_*[]()~`>#+-=|{}.!":
+        text = text.replace(ch, f"\\{ch}")
+    return text
 
 def clean_html(html: str) -> list[str]:
     soup = BeautifulSoup(html, "html.parser")
@@ -191,9 +203,9 @@ async def send_page(update, context, user_id, first=False):
     progress = int((page + 1) / total * 100)
 
     text = (
-    	f"📘 *{cache['title']}*\n"
-    	f"✍️ _{cache['author']}_\n\n"
-    	f"{cache['pages'][page]}\n\n"
+    	f"📘 *{escape_md(cache['title'])}*\n"
+    	f"✍️ _{escape_md(cache['author'])}_\n\n"
+    	f"{escape_md(cache['pages'][page])}\n\n"
     	f"📖 {page + 1}/{total} • {progress}%"
     )
 
@@ -202,7 +214,7 @@ async def send_page(update, context, user_id, first=False):
         msg = await update.message.reply_text(
             text,
             reply_markup=reader_keyboard(),
-            parse_mode="Markdown"
+            parse_mode="MarkdownV2"
         )
         cache["message_id"] = msg.message_id
     else:
@@ -211,7 +223,7 @@ async def send_page(update, context, user_id, first=False):
             message_id=cache["message_id"],
             text=text,
             reply_markup=reader_keyboard(),
-            parse_mode="Markdown"
+            parse_mode="MarkdownV2"
         )
 
 # ================== КНОПКИ ==================
@@ -277,31 +289,19 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_page(update, context, user_id)
 
 
-# ================== WEBHOOK ==================
+# ================== ЗАПУСК ==================
 
-WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
-WEBHOOK_URL = f"https://myreaderbot.onrender.com{WEBHOOK_PATH}"
+def main():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-fastapi_app = FastAPI()
-telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(
+        MessageHandler(filters.Document.FileExtension("epub"), handle_epub)
+    )
+    app.add_handler(CallbackQueryHandler(callbacks))
 
-# регистрируем хендлеры ОДИН РАЗ
-telegram_app.add_handler(CommandHandler("start", start))
-telegram_app.add_handler(
-    MessageHandler(filters.Document.FileExtension("epub"), handle_epub)
-)
-telegram_app.add_handler(CallbackQueryHandler(callbacks))
+    print("✅ Бот запущен")
+    app.run_polling()
 
-
-@fastapi_app.on_event("startup")
-async def on_startup():
-    await telegram_app.bot.set_webhook(WEBHOOK_URL)
-    print("✅ Бот запущен (webhook)")
-
-
-@fastapi_app.post(WEBHOOK_PATH)
-async def telegram_webhook(request: Request):
-    data = await request.json()
-    update = Update.de_json(data, telegram_app.bot)
-    await telegram_app.process_update(update)
-    return {"ok": True}
+if __name__ == "__main__":
+    main()
